@@ -44,6 +44,8 @@ func PrintServerHelp() {
 	fmt.Println("* resume")
 	fmt.Println("* quit")
 	fmt.Println("* help")
+	fmt.Println("* clear")
+
 }
 
 func GetInput() []string {
