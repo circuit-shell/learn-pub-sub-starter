@@ -11,6 +11,8 @@ import (
 
 const RabbitConnString = "amqp://guest:guest@localhost:5672/"
 
+var empmtyArgsTable amqp.Table
+
 func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	jsonData, err := json.Marshal(val)
 	if err != nil {
@@ -41,7 +43,8 @@ func DeclareAndBind(
 	exchange,
 	queueName,
 	key string,
-	queueType SimpleQueueType) (*amqp.Channel, amqp.Queue, error) {
+	queueType SimpleQueueType,
+) (*amqp.Channel, amqp.Queue, error) {
 
 	// 1. Create Channel
 	ch, err := conn.Channel()
@@ -54,10 +57,9 @@ func DeclareAndBind(
 	autodelete := queueType == Transient
 	exclusive := queueType == Transient
 	nowait := false
-	var args amqp.Table
 
 	// 3. Declare the queue
-	queue, err := ch.QueueDeclare(queueName, durable, autodelete, exclusive, nowait, args)
+	queue, err := ch.QueueDeclare(queueName, durable, autodelete, exclusive, nowait, empmtyArgsTable)
 	if err != nil {
 		ch.Close() // Clean up the channel if declaration fails
 		return nil, amqp.Queue{}, fmt.Errorf("failed to declare queue '%s': %w", queueName, err)
@@ -71,4 +73,39 @@ func DeclareAndBind(
 	}
 
 	return ch, queue, nil
+}
+
+func SubscribeJSON[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType,
+	handler func(T),
+) error {
+
+	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return fmt.Errorf("Could not declare and bind queue: %v", err)
+	}
+
+	chDelivery, err := ch.Consume(queue.Name, "", false, false, false, false, empmtyArgsTable)
+	if err != nil {
+		return fmt.Errorf("could not consume messages: %v", err)
+	}
+
+	go func() {
+		defer ch.Close()
+		for msg := range chDelivery{
+			var body T
+			if err := json.Unmarshal(msg.Body, &body); err != nil {
+				fmt.Printf("could not unmarshal message: %v\n", err)
+				continue
+			}
+			handler(body)
+			msg.Ack(false)
+		}
+	}()
+
+	return nil
 }

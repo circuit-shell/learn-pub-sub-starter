@@ -26,6 +26,17 @@ func main() {
 		log.Fatal("could not connect Channel")
 	}
 
+	_, queue, err := pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic,
+		"game_logs",
+		"game_logs.*",
+		pubsub.Durable)
+	if err != nil {
+		log.Fatalf("could not declare or bind pause queue: %v", err)
+	}
+	fmt.Printf("Queue %v declared and bound! \n", queue.Name)
+
 	for {
 		userInputs := gamelogic.GetInput()
 		if len(userInputs) == 0 {
