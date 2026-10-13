@@ -37,7 +37,24 @@ func main() {
 		handlerPause(gamestate),
 	)
 	if err != nil {
-		log.Fatalf("could not declare or bind pause queue: %v", err)
+		log.Fatalf("could not Subscribe to pause queue: %v", err)
+	}
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,           // exchange
+		routing.ArmyMovesPrefix+"."+userName, // queueName
+		routing.ArmyMovesPrefix+".*",         // key
+		pubsub.Transient,
+		handlerMove(gamestate),
+	)
+	if err != nil {
+		log.Fatalf("could not Subscribe to move queue: %v", err)
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatal("could not connect Channel")
 	}
 
 	for {
@@ -51,6 +68,16 @@ func main() {
 			armyMove, err := gamestate.CommandMove(userInputs)
 			if err != nil {
 				fmt.Println(err)
+				continue
+			}
+			err = pubsub.PublishJSON(
+				ch,
+				routing.ExchangePerilTopic,
+				routing.ArmyMovesPrefix+".*", // key
+				armyMove,
+			)
+			if err != nil {
+				log.Println("could not publish to pauseKey: %v", err)
 				continue
 			}
 			fmt.Println("Move command executed: ", armyMove)
@@ -84,5 +111,12 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
 	return func(ps routing.PlayingState) {
 		defer fmt.Print("> ")
 		gs.HandlePause(ps)
+	}
+}
+
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(move gamelogic.ArmyMove) {
+		defer fmt.Print("> ")
+		gs.HandleMove(move)
 	}
 }
