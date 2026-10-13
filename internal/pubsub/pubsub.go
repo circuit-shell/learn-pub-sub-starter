@@ -38,6 +38,14 @@ const (
 	Transient SimpleQueueType = "transient"
 )
 
+type Actype string
+
+const (
+	Ack         = "Ack"
+	NackRequeue = "NackRequeue"
+	NackDiscard = "NackDiscard"
+)
+
 func DeclareAndBind(
 	conn *amqp.Connection,
 	exchange,
@@ -81,7 +89,7 @@ func SubscribeJSON[T any](
 	queueName,
 	key string,
 	queueType SimpleQueueType,
-	handler func(T),
+	handler func(T) Actype,
 ) error {
 
 	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
@@ -96,14 +104,23 @@ func SubscribeJSON[T any](
 
 	go func() {
 		defer ch.Close()
-		for msg := range chDelivery{
+		for msg := range chDelivery {
 			var body T
 			if err := json.Unmarshal(msg.Body, &body); err != nil {
 				fmt.Printf("could not unmarshal message: %v\n", err)
 				continue
 			}
-			handler(body)
-			msg.Ack(false)
+			switch handler(body) {
+			case Ack:
+				msg.Ack(false)
+				fmt.Println("Ack")
+			case NackDiscard:
+				msg.Nack(false, false)
+				fmt.Println("NackDiscard")
+			case NackRequeue:
+				msg.Nack(false, true)
+				fmt.Println("NackRequeue")
+			}
 		}
 	}()
 
