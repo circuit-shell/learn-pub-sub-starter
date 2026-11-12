@@ -1,7 +1,9 @@
 package pubsub
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -66,8 +68,12 @@ func DeclareAndBind(
 	exclusive := queueType == Transient
 	nowait := false
 
+	table := amqp.Table{
+		"x-dead-letter-exchange": "peril_dlx",
+	}
+
 	// 3. Declare the queue
-	queue, err := ch.QueueDeclare(queueName, durable, autodelete, exclusive, nowait, empmtyArgsTable)
+	queue, err := ch.QueueDeclare(queueName, durable, autodelete, exclusive, nowait, table)
 	if err != nil {
 		ch.Close() // Clean up the channel if declaration fails
 		return nil, amqp.Queue{}, fmt.Errorf("failed to declare queue '%s': %w", queueName, err)
@@ -113,16 +119,43 @@ func SubscribeJSON[T any](
 			switch handler(body) {
 			case Ack:
 				msg.Ack(false)
-				fmt.Println("Ack")
 			case NackDiscard:
 				msg.Nack(false, false)
-				fmt.Println("NackDiscard")
 			case NackRequeue:
 				msg.Nack(false, true)
-				fmt.Println("NackRequeue")
 			}
 		}
 	}()
 
 	return nil
 }
+
+func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
+	encodedData, err := encode(val)
+	if err != nil {
+		log.Fatalf("Error occurred marshalling in PublishJSON: %s", err)
+	}
+	ctx := context.Background()
+	mandatory := false
+	immediate := false
+	msg := amqp.Publishing{
+			ContentType: "application/gob",
+		Body: encodedData,
+	}
+	ch.PublishWithContext(ctx, exchange, key, mandatory, immediate, msg)
+	return nil
+}
+
+
+func encode[T any](val T) ([]byte, error) {
+	var buffer bytes.Buffer
+	enc := gob.NewEncoder(&buffer)
+	err := enc.Encode(val)
+	if err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+
+
