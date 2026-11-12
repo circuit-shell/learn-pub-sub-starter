@@ -27,34 +27,16 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	return nil
 }
 
-
-
 func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
-	encodedData, err := encode(val)
-	if err != nil {
-		log.Fatalf("Error occurred marshalling in PublishJSON: %s", err)
-	}
-	ctx := context.Background()
-	mandatory := false
-	immediate := false
-	msg := amqp.Publishing{
-			ContentType: "application/gob",
-		Body: encodedData,
-	}
-	ch.PublishWithContext(ctx, exchange, key, mandatory, immediate, msg)
-	return nil
-}
-
-
-func encode[T any](val T) ([]byte, error) {
 	var buffer bytes.Buffer
-	enc := gob.NewEncoder(&buffer)
-	err := enc.Encode(val)
+	encoder := gob.NewEncoder(&buffer)
+	err := encoder.Encode(val)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return buffer.Bytes(), nil
+	return ch.PublishWithContext(context.Background(), exchange, key, false, false, amqp.Publishing{
+		ContentType: "application/gob",
+		Body:        buffer.Bytes(),
+	})
 }
-
-
 
